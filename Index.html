@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sunday Service Registration</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .container {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+      max-width: 600px;
+      width: 100%;
+      padding: 40px;
+      animation: fadeIn 0.5s ease-in;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 28px;
+      text-align: center;
+    }
+
+    .subtitle {
+      color: #666;
+      text-align: center;
+      margin-bottom: 15px;
+      font-size: 14px;
+    }
+
+    .sunday-date {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 15px;
+      border-radius: 8px;
+      text-align: center;
+      margin-bottom: 25px;
+      font-weight: 600;
+      font-size: 16px;
+    }
+
+    .sunday-date .date-label {
+      font-size: 12px;
+      opacity: 0.9;
+      margin-bottom: 5px;
+    }
+
+    .person-block {
+      background: #f8f9fa;
+      border: 2px solid #e9ecef;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      position: relative;
+      transition: all 0.3s ease;
+    }
+
+    .person-block:hover {
+      border-color: #667eea;
+    }
+
+    .person-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+
+    .person-number {
+      font-weight: 600;
+      color: #667eea;
+      font-size: 16px;
+    }
+
+    .remove-btn {
+      background: #dc3545;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.3s;
+    }
+
+    .remove-btn:hover {
+      background: #c82333;
+    }
+
+    .form-group {
+      margin-bottom: 15px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 5px;
+      color: #333;
+      font-weight: 500;
+      font-size: 14px;
+    }
+
+    input[type="text"],
+    input[type="email"] {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e9ecef;
+      border-radius: 6px;
+      font-size: 14px;
+      transition: border-color 0.3s;
+    }
+
+    input[type="text"]:focus,
+    input[type="email"]:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px;
+      background: white;
+      border-radius: 6px;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+      accent-color: #667eea;
+    }
+
+    .checkbox-group label {
+      margin: 0;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .add-person-btn {
+      width: 100%;
+      padding: 12px;
+      background: white;
+      border: 2px dashed #667eea;
+      color: #667eea;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.3s;
+      margin-bottom: 20px;
+    }
+
+    .add-person-btn:hover {
+      background: #667eea;
+      color: white;
+    }
+
+    .submit-btn {
+      width: 100%;
+      padding: 15px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 600;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .submit-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+    }
+
+    .submit-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .success-message {
+      display: none;
+      text-align: center;
+      padding: 30px;
+    }
+
+    .success-message.show {
+      display: block;
+      animation: fadeIn 0.5s ease-in;
+    }
+
+    .success-icon {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+      animation: scaleIn 0.5s ease-out;
+    }
+
+    @keyframes scaleIn {
+      from {
+        transform: scale(0);
+      }
+      to {
+        transform: scale(1);
+      }
+    }
+
+    .success-message h2 {
+      color: #333;
+      margin-bottom: 10px;
+    }
+
+    .success-message p {
+      color: #666;
+      line-height: 1.6;
+      margin-bottom: 15px;
+    }
+
+    .livestream-link {
+      display: inline-block;
+      margin: 20px 0;
+      padding: 15px 30px;
+      background: #ff0000;
+      color: white;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 16px;
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(255, 0, 0, 0.3);
+    }
+
+    .livestream-link:hover {
+      background: #cc0000;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(255, 0, 0, 0.4);
+    }
+
+    .register-another-btn {
+      margin-top: 20px;
+      padding: 12px 30px;
+      background: white;
+      border: 2px solid #667eea;
+      color: #667eea;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.3s;
+    }
+
+    .register-another-btn:hover {
+      background: #667eea;
+      color: white;
+    }
+
+    .error-message {
+      background: #f8d7da;
+      color: #721c24;
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 20px;
+      display: none;
+      border: 1px solid #f5c6cb;
+    }
+
+    .error-message.show {
+      display: block;
+    }
+
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #667eea;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 1s linear infinite;
+      display: inline-block;
+      margin-left: 10px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    @keyframes fadeOut {
+      from {
+        opacity: 1;
+        transform: scale(1);
+      }
+      to {
+        opacity: 0;
+        transform: scale(0.9);
+      }
+    }
+
+    /* Modal Styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 1000;
+      animation: fadeIn 0.3s ease-in;
+    }
+
+    .modal-overlay.show {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-content {
+      background: white;
+      border-radius: 12px;
+      padding: 40px;
+      max-width: 500px;
+      width: 90%;
+      text-align: center;
+      animation: scaleIn 0.3s ease-out;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    .modal-content h2 {
+      color: #333;
+      margin-bottom: 15px;
+      font-size: 24px;
+    }
+
+    .modal-content p {
+      color: #666;
+      margin-bottom: 25px;
+      line-height: 1.6;
+    }
+
+    .modal-livestream-btn {
+      display: inline-block;
+      padding: 15px 40px;
+      background: #ff0000;
+      color: white;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 18px;
+      margin-bottom: 15px;
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(255, 0, 0, 0.3);
+    }
+
+    .modal-livestream-btn:hover {
+      background: #cc0000;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(255, 0, 0, 0.4);
+    }
+
+    .modal-close-btn {
+      background: transparent;
+      border: 2px solid #667eea;
+      color: #667eea;
+      padding: 10px 30px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.3s;
+      margin-top: 10px;
+    }
+
+    .modal-close-btn:hover {
+      background: #667eea;
+      color: white;
+    }
+
+    @media (max-width: 600px) {
+      .container {
+        padding: 20px;
+      }
+
+      h1 {
+        font-size: 24px;
+      }
+
+      .person-block {
+        padding: 15px;
+      }
+
+      .modal-content {
+        padding: 30px 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Registration Form -->
+    <div id="registrationForm">
+      <h1>🙏 Sunday Service Registration</h1>
+      <p class="subtitle">Please register everyone who will be joining the live stream</p>
+      
+      <div class="sunday-date">
+        <div class="date-label">NEXT SUNDAY SERVICE</div>
+        <div id="sundayDateDisplay">Loading...</div>
+      </div>
+      
+      <div class="error-message" id="errorMessage"></div>
+      
+      <div id="peopleContainer">
+        <!-- First person (always present) -->
+        <div class="person-block" data-person-id="1">
+          <div class="person-header">
+            <span class="person-number">Person 1</span>
+          </div>
+          
+          <div class="form-group">
+            <label for="firstName1">First Name *</label>
+            <input type="text" id="firstName1" name="firstName" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="lastName1">Last Name *</label>
+            <input type="text" id="lastName1" name="lastName" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="email1">Email *</label>
+            <input type="email" id="email1" name="email" required>
+          </div>
+          
+          <div class="form-group">
+            <div class="checkbox-group">
+              <input type="checkbox" id="isGuest1" name="isGuest">
+              <label for="isGuest1">I am a Guest (check if you're visiting)</label>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <button type="button" class="add-person-btn" onclick="addPerson()">
+        ➕ Add Another Person
+      </button>
+      
+      <button type="button" class="submit-btn" onclick="submitForm()">
+        Submit Registration
+      </button>
+    </div>
+
+    <!-- Success Message (hidden initially) -->
+    <div class="success-message" id="successMessage">
+      <div class="success-icon">✓</div>
+      <h2>Registration Complete!</h2>
+      <p id="successText">Thank you for registering. We look forward to worshiping with you this Sunday!</p>
+      <p style="font-size: 14px; color: #999;">Check your email for confirmation and the live stream link.</p>
+      <button class="register-another-btn" onclick="resetForm()">
+        Register Another Group
+      </button>
+    </div>
+  </div>
+
+  <!-- Live Stream Modal -->
+  <div class="modal-overlay" id="liveStreamModal">
+    <div class="modal-content">
+      <h2>🎉 Registration Successful!</h2>
+      <p>Your registration is confirmed! You can now join the Sunday Service live stream.</p>
+      <a href="#" id="modalLiveStreamLink" class="modal-livestream-btn" target="_blank">
+        📺 Join Live Stream Now
+      </a>
+      <p style="font-size: 14px; color: #999; margin-top: 20px;">
+        We've also sent you a confirmation email with the link.
+      </p>
+      <button class="modal-close-btn" onclick="closeModal()">
+        Close
+      </button>
+    </div>
+  </div>
+
+  <script>
+    var personCount = 1;
+    var sundayDate = '';
+
+    // Load Sunday date when page loads
+    window.onload = function() {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          sundayDate = result.formatted;
+          document.getElementById('sundayDateDisplay').textContent = result.formatted;
+        })
+        .withFailureHandler(function(error) {
+          console.error('Error loading Sunday date:', error);
+          document.getElementById('sundayDateDisplay').textContent = 'This Sunday';
+        })
+        .getNextSunday();
+    };
+
+    /**
+     * Adds a new person block to the form
+     */
+    function addPerson() {
+      personCount++;
+      var container = document.getElementById('peopleContainer');
+      
+      var personBlock = document.createElement('div');
+      personBlock.className = 'person-block';
+      personBlock.setAttribute('data-person-id', personCount);
+      
+      personBlock.innerHTML = 
+        '<div class="person-header">' +
+          '<span class="person-number">Person ' + personCount + '</span>' +
+          '<button type="button" class="remove-btn" onclick="removePerson(' + personCount + ')">Remove</button>' +
+        '</div>' +
+        '<div class="form-group">' +
+          '<label for="firstName' + personCount + '">First Name *</label>' +
+          '<input type="text" id="firstName' + personCount + '" name="firstName" required>' +
+        '</div>' +
+        '<div class="form-group">' +
+          '<label for="lastName' + personCount + '">Last Name *</label>' +
+          '<input type="text" id="lastName' + personCount + '" name="lastName" required>' +
+        '</div>' +
+        '<div class="form-group">' +
+          '<label for="email' + personCount + '">Email *</label>' +
+          '<input type="email" id="email' + personCount + '" name="email" required>' +
+        '</div>' +
+        '<div class="form-group">' +
+          '<div class="checkbox-group">' +
+            '<input type="checkbox" id="isGuest' + personCount + '" name="isGuest">' +
+            '<label for="isGuest' + personCount + '">I am a Guest (check if you\'re visiting)</label>' +
+          '</div>' +
+        '</div>';
+      
+      container.appendChild(personBlock);
+      
+      // Scroll to the new person block
+      personBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    /**
+     * Removes a person block from the form
+     */
+    function removePerson(id) {
+      var personBlock = document.querySelector('[data-person-id="' + id + '"]');
+      if (personBlock) {
+        personBlock.style.animation = 'fadeOut 0.3s ease-out';
+        setTimeout(function() {
+          personBlock.remove();
+          renumberPeople();
+        }, 300);
+      }
+    }
+
+    /**
+     * Renumbers the people blocks after removal
+     */
+    function renumberPeople() {
+      var blocks = document.querySelectorAll('.person-block');
+      for (var i = 0; i < blocks.length; i++) {
+        var number = i + 1;
+        blocks[i].setAttribute('data-person-id', number);
+        blocks[i].querySelector('.person-number').textContent = 'Person ' + number;
+      }
+      personCount = blocks.length;
+    }
+
+    /**
+     * Validates email format
+     */
+    function isValidEmail(email) {
+      var re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      return re.test(email);
+    }
+
+    /**
+     * Validates and submits the form
+     */
+    function submitForm() {
+      console.log('Submit button clicked');
+      
+      var errorMessage = document.getElementById('errorMessage');
+      errorMessage.classList.remove('show');
+      
+      // Collect all registrants
+      var registrants = [];
+      var personBlocks = document.querySelectorAll('.person-block');
+      
+      console.log('Found ' + personBlocks.length + ' person blocks');
+      
+      // Validate all fields
+      var isValid = true;
+      for (var i = 0; i < personBlocks.length; i++) {
+        var block = personBlocks[i];
+        var id = block.getAttribute('data-person-id');
+        var firstNameInput = document.getElementById('firstName' + id);
+        var lastNameInput = document.getElementById('lastName' + id);
+        var emailInput = document.getElementById('email' + id);
+        var isGuestInput = document.getElementById('isGuest' + id);
+        
+        var firstName = firstNameInput ? firstNameInput.value.trim() : '';
+        var lastName = lastNameInput ? lastNameInput.value.trim() : '';
+        var email = emailInput ? emailInput.value.trim() : '';
+        var isGuest = isGuestInput ? isGuestInput.checked : false;
+        
+        console.log('Person ' + (i + 1) + ': ' + firstName + ' ' + lastName + ' (' + email + ') - Guest: ' + isGuest);
+        
+        if (!firstName || !lastName || !email) {
+          isValid = false;
+          errorMessage.textContent = 'Please fill in all required fields for Person ' + (i + 1);
+          errorMessage.classList.add('show');
+          return;
+        }
+        
+        if (!isValidEmail(email)) {
+          isValid = false;
+          errorMessage.textContent = 'Please enter a valid email address for Person ' + (i + 1);
+          errorMessage.classList.add('show');
+          return;
+        }
+        
+        registrants.push({
+          firstName: firstName,
+          lastName: lastName,
+          email: email,
+          type: isGuest ? 'Guest' : 'Member'
+        });
+      }
+      
+      if (!isValid) {
+        console.log('Validation failed');
+        return;
+      }
+      
+      console.log('Validation passed. Registrants:', registrants);
+      
+      // Disable submit button and show loading
+      var submitBtn = document.querySelector('.submit-btn');
+      var originalText = submitBtn.textContent;
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = 'Submitting... <span class="spinner"></span>';
+      
+      // Send data to Google Apps Script
+      var formData = {
+        registrants: registrants,
+        sessionInfo: 'Sunday Service - ' + new Date().toLocaleDateString(),
+        sundayDate: sundayDate
+      };
+      
+      console.log('Sending data to Google Apps Script:', formData);
+      
+      // Call the Google Apps Script function
+      google.script.run
+        .withSuccessHandler(handleSuccess)
+        .withFailureHandler(handleError)
+        .saveRegistration(formData);
+    }
+
+    /**
+     * Handles successful form submission
+     */
+    function handleSuccess(response) {
+      console.log('Success response:', response);
+      
+      if (response.success) {
+        // Show live stream modal
+        var modal = document.getElementById('liveStreamModal');
+        var modalLink = document.getElementById('modalLiveStreamLink');
+        modalLink.href = response.liveStreamLink;
+        modal.classList.add('show');
+        
+        // Hide the form
+        document.getElementById('registrationForm').style.display = 'none';
+        
+      } else {
+        handleError({ message: response.message || 'Registration failed' });
+      }
+    }
+
+    /**
+     * Handles form submission errors
+     */
+    function handleError(error) {
+      console.error('Error:', error);
+      
+      var errorMessage = document.getElementById('errorMessage');
+      errorMessage.textContent = error.message || 'An error occurred. Please try again.';
+      errorMessage.classList.add('show');
+      
+      // Re-enable submit button
+      var submitBtn = document.querySelector('.submit-btn');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Submit Registration';
+    }
+
+    /**
+     * Closes the live stream modal
+     */
+    function closeModal() {
+      var modal = document.getElementById('liveStreamModal');
+      modal.classList.remove('show');
+      
+      // Show success message
+      document.getElementById('successMessage').classList.add('show');
+    }
+
+    /**
+     * Resets the form for another registration
+     */
+    function resetForm() {
+      // Hide success message
+      document.getElementById('successMessage').classList.remove('show');
+      
+      // Show form
+      document.getElementById('registrationForm').style.display = 'block';
+      
+      // Clear all person blocks except the first
+      var container = document.getElementById('peopleContainer');
+      var personBlocks = container.querySelectorAll('.person-block');
+      for (var i = 1; i < personBlocks.length; i++) {
+        personBlocks[i].remove();
+      }
+      
+      // Reset first person's fields
+      document.getElementById('firstName1').value = '';
+      document.getElementById('lastName1').value = '';
+      document.getElementById('email1').value = '';
+      document.getElementById('isGuest1').checked = false;
+      
+      // Reset counter
+      personCount = 1;
+      
+      // Clear error message
+      document.getElementById('errorMessage').classList.remove('show');
+    }
+
+    // Log that script is loaded
+    console.log('Sunday Service Registration form loaded successfully');
+  </script>
+</body>
+</html>
