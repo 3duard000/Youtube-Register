@@ -1,16 +1,32 @@
 /**
- * Sunday Service Registration System - FIXED VERSION
- * All tabs auto-update, email column properly created, automatic email sending
+ * Sunday Service Registration System - ENHANCED VERSION
+ * Smart Sunday detection, improved dashboards, automated updates
  * 
- * SETUP: Run setupAllSheets() once, then deploy as web app
+ * SETUP: Run setupAllSheets() once, then run setupAutomatedTriggers()
  */
 
 // ==================== CONFIGURATION ====================
-const SHEET_ID = '1Z7JrY-7US55iUnNmyXB3m5hKFGoWpR0bGMW1XXRgWnQ';
+
+// COMMUNITY ROUTING - Each community has its own Google Sheet
+const COMMUNITY_SHEETS = {
+  'Belvedere': '1U9VS9kEH7DGD_gbwqo1bzVTfgHgL-WS3mwQlysoNGJE',
+  'New Jersey': '1U9VS9kEH7DGD_gbwqo1bzVTfgHgL-WS3mwQlysoNGJE'  // Change this to different sheet ID if needed
+};
+
+// Central tracking sheet (optional - tracks all communities)
+const CENTRAL_SHEET_ID = '1Z7JrY-7US55iUnNmyXB3m5hKFGoWpR0bGMW1XXRgWnQ';
+
+// Sheet tab names (same for all community sheets)
 const SHEET_NAME = 'Registrations';
 const MONTHLY_SHEET_NAME = 'Current Month';
 const YEARLY_SHEET_NAME = 'Yearly Summary';
+const SUNDAY_SHEET_NAME = 'Sunday Breakdown';
+
+// Live stream link
 const LIVE_STREAM_LINK = 'https://www.youtube.com/live/xU2alDtuXkw';
+
+// Time after which we switch to next Sunday (in 24-hour format)
+const SERVICE_END_HOUR = 14; // 2:00 PM
 
 // ==================== WEB APP FUNCTIONS ====================
 
@@ -25,6 +41,13 @@ function doGet() {
 }
 
 /**
+ * Returns the list of available communities
+ */
+function getCommunities() {
+  return Object.keys(COMMUNITY_SHEETS);
+}
+
+/**
  * Returns the live stream link to the web app
  */
 function getLiveStreamLink() {
@@ -32,31 +55,49 @@ function getLiveStreamLink() {
 }
 
 /**
- * Calculates the next Sunday date
+ * Calculates the appropriate Sunday date for registration
+ * If it's Sunday before SERVICE_END_HOUR, show today
+ * Otherwise, show next Sunday
  */
 function getNextSunday() {
-  var today = new Date();
-  var dayOfWeek = today.getDay();
-  var daysUntilSunday = (7 - dayOfWeek) % 7;
+  var now = new Date();
+  var dayOfWeek = now.getDay(); // 0 = Sunday, 6 = Saturday
+  var currentHour = now.getHours();
   
-  if (daysUntilSunday === 0) {
-    daysUntilSunday = 0;
+  var targetDate = new Date(now);
+  
+  if (dayOfWeek === 0) {
+    // It's Sunday
+    if (currentHour < SERVICE_END_HOUR) {
+      // Before service end time - register for TODAY
+      Logger.log('It\'s Sunday before ' + SERVICE_END_HOUR + ':00, showing today');
+    } else {
+      // After service end time - register for NEXT Sunday
+      Logger.log('It\'s Sunday after ' + SERVICE_END_HOUR + ':00, showing next Sunday');
+      targetDate.setDate(now.getDate() + 7);
+    }
+  } else {
+    // Not Sunday - calculate next Sunday
+    var daysUntilSunday = (7 - dayOfWeek) % 7;
+    if (daysUntilSunday === 0) daysUntilSunday = 7;
+    targetDate.setDate(now.getDate() + daysUntilSunday);
+    Logger.log('Today is not Sunday, showing upcoming Sunday');
   }
   
-  var nextSunday = new Date(today);
-  nextSunday.setDate(today.getDate() + daysUntilSunday);
-  
   var options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+  
   return {
-    formatted: nextSunday.toLocaleDateString('en-US', options),
-    date: nextSunday
+    formatted: targetDate.toLocaleDateString('en-US', options),
+    date: targetDate.toISOString(),
+    dateOnly: Utilities.formatDate(targetDate, Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+    isToday: dayOfWeek === 0 && currentHour < SERVICE_END_HOUR
   };
 }
 
 // ==================== REGISTRATION FUNCTIONS ====================
 
 /**
- * Saves registration data to Google Sheet and sends confirmation email
+ * Saves registration data to community-specific Google Sheet and sends confirmation email
  * AUTOMATICALLY UPDATES ALL TABS
  */
 function saveRegistration(formData) {
@@ -66,7 +107,19 @@ function saveRegistration(formData) {
     Logger.log('========================================');
     Logger.log('Form data received: ' + JSON.stringify(formData));
     
-    var sheet = getOrCreateSheet();
+    // Get the community
+    var community = formData.community || 'Belvedere';
+    Logger.log('Community: ' + community);
+    
+    // Get the correct sheet ID for this community
+    var sheetId = COMMUNITY_SHEETS[community];
+    if (!sheetId) {
+      throw new Error('Invalid community: ' + community);
+    }
+    
+    Logger.log('Routing to sheet ID: ' + sheetId);
+    
+    var sheet = getOrCreateSheet(sheetId);
     var timestamp = new Date();
     var emails = [];
     
@@ -78,15 +131,16 @@ function saveRegistration(formData) {
       Logger.log('Adding person ' + (i + 1) + ': ' + person.firstName + ' ' + person.lastName + ' (' + person.email + ')');
       
       // IMPORTANT: Column order must match headers
-      // Columns: Timestamp, First Name, Last Name, Email, Type, Session, Sunday Date
+      // Columns: Timestamp, Community, First Name, Last Name, Email, Type, Session, Sunday Date
       sheet.appendRow([
         timestamp,              // Column A: Timestamp
-        person.firstName,       // Column B: First Name
-        person.lastName,        // Column C: Last Name
-        person.email,           // Column D: Email
-        person.type,            // Column E: Type
-        formData.sessionInfo || 'Sunday Service',  // Column F: Session
-        formData.sundayDate || ''  // Column G: Sunday Date
+        community,              // Column B: Community
+        person.firstName,       // Column C: First Name
+        person.lastName,        // Column D: Last Name
+        person.email,           // Column E: Email
+        person.type,            // Column F: Type
+        formData.sessionInfo || 'Sunday Service',  // Column G: Session
+        formData.sundayDate || ''  // Column H: Sunday Date
       ]);
       
       // Collect unique emails for sending confirmations
@@ -95,24 +149,26 @@ function saveRegistration(formData) {
       }
     }
     
-    Logger.log('✓ All registrants added to sheet');
+    Logger.log('✓ All registrants added to ' + community + ' sheet');
     
     // Sort by timestamp (newest first)
     var lastRow = sheet.getLastRow();
     if (lastRow > 1) {
-      var range = sheet.getRange(2, 1, lastRow - 1, 7);
+      var range = sheet.getRange(2, 1, lastRow - 1, 8);
       range.sort({column: 1, ascending: false});
       Logger.log('✓ Data sorted by timestamp');
     }
     
-    // AUTOMATICALLY UPDATE ALL TABS
-    Logger.log('Updating Current Month tab...');
-    updateMonthlySummary();
+    // AUTOMATICALLY UPDATE ALL TABS FOR THIS COMMUNITY
+    Logger.log('Updating dashboard tabs for ' + community + '...');
+    updateMonthlySummary(sheetId);
     Logger.log('✓ Current Month tab updated');
     
-    Logger.log('Updating Yearly Summary tab...');
-    updateYearlySummary();
+    updateYearlySummary(sheetId);
     Logger.log('✓ Yearly Summary tab updated');
+    
+    updateSundayBreakdown(sheetId);
+    Logger.log('✓ Sunday Breakdown tab updated');
     
     // Send confirmation emails
     Logger.log('Sending confirmation emails to ' + emails.length + ' recipient(s)...');
@@ -124,7 +180,7 @@ function saveRegistration(formData) {
       Logger.log('Attempting to send email to: ' + email);
       
       try {
-        if (sendConfirmationEmail(email, formData.registrants, formData.sundayDate)) {
+        if (sendConfirmationEmail(email, formData.registrants, formData.sundayDate, community)) {
           emailsSent++;
           Logger.log('✓ Email sent to: ' + email);
         } else {
@@ -139,6 +195,7 @@ function saveRegistration(formData) {
     
     Logger.log('========================================');
     Logger.log('REGISTRATION COMPLETE');
+    Logger.log('Community: ' + community);
     Logger.log('Total registrants: ' + formData.registrants.length);
     Logger.log('Emails sent: ' + emailsSent + '/' + emails.length);
     if (emailErrors.length > 0) {
@@ -148,8 +205,9 @@ function saveRegistration(formData) {
     
     return {
       success: true,
-      message: 'Registration successful! ' + (emailsSent > 0 ? 'Check your email for confirmation.' : ''),
+      message: 'Registration successful for ' + community + '! ' + (emailsSent > 0 ? 'Check your email for confirmation.' : ''),
       count: formData.registrants.length,
+      community: community,
       liveStreamLink: LIVE_STREAM_LINK,
       emailsSent: emailsSent,
       emailErrors: emailErrors.length
@@ -173,7 +231,7 @@ function saveRegistration(formData) {
 /**
  * Sends confirmation email to registrant
  */
-function sendConfirmationEmail(email, registrants, sundayDate) {
+function sendConfirmationEmail(email, registrants, sundayDate, community) {
   try {
     // Find all people with this email
     var people = [];
@@ -200,7 +258,7 @@ function sendConfirmationEmail(email, registrants, sundayDate) {
     }
     var typesString = types.join(', ');
     
-    var subject = '✅ Sunday Service Registration Confirmed - ' + sundayDate;
+    var subject = '✅ Sunday Service Registration Confirmed - ' + community + ' - ' + sundayDate;
     
     var htmlBody = 
       '<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">' +
@@ -212,6 +270,7 @@ function sendConfirmationEmail(email, registrants, sundayDate) {
       '<p style="font-size: 16px; color: #333;">Thank you for registering for our Sunday Service!</p>' +
       '<div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea;">' +
       '<h3 style="color: #667eea; margin-top: 0;">📅 Service Details</h3>' +
+      '<p style="margin: 10px 0;"><strong>Community:</strong> ' + community + '</p>' +
       '<p style="margin: 10px 0;"><strong>Date:</strong> ' + sundayDate + '</p>' +
       '<p style="margin: 10px 0;"><strong>Registered:</strong> ' + namesString + '</p>' +
       '<p style="margin: 10px 0;"><strong>Type:</strong> ' + typesString + '</p>' +
@@ -221,7 +280,7 @@ function sendConfirmationEmail(email, registrants, sundayDate) {
       '</div>' +
       '<p style="font-size: 14px; color: #666;">We look forward to worshiping with you this Sunday!</p>' +
       '<hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">' +
-      '<p style="font-size: 12px; color: #999; text-align: center;">This is an automated confirmation email for your Sunday Service registration.</p>' +
+      '<p style="font-size: 12px; color: #999; text-align: center;">This is an automated confirmation email for your Sunday Service registration at ' + community + '.</p>' +
       '</div>' +
       '</div>';
     
@@ -230,12 +289,13 @@ function sendConfirmationEmail(email, registrants, sundayDate) {
       'Dear ' + people[0].firstName + ',\n\n' +
       'Thank you for registering for our Sunday Service!\n\n' +
       'Service Details:\n' +
+      'Community: ' + community + '\n' +
       'Date: ' + sundayDate + '\n' +
       'Registered: ' + namesString + '\n' +
       'Type: ' + typesString + '\n\n' +
       'Live Stream Link: ' + LIVE_STREAM_LINK + '\n\n' +
       'We look forward to worshiping with you this Sunday!\n\n' +
-      'This is an automated confirmation email.';
+      'This is an automated confirmation email for ' + community + '.';
     
     MailApp.sendEmail({
       to: email,
@@ -255,16 +315,52 @@ function sendConfirmationEmail(email, registrants, sundayDate) {
 // ==================== SETUP FUNCTIONS ====================
 
 /**
- * MAIN SETUP FUNCTION - RUN THIS FIRST
- * Creates all 3 tabs with proper formatting including EMAIL COLUMN
+ * MAIN SETUP FUNCTION - RUN THIS FOR EACH COMMUNITY
+ * Creates all 4 tabs with proper formatting
+ * 
+ * Usage: setupAllSheets('Belvedere') or setupAllSheets('New Jersey')
  */
-function setupAllSheets() {
-  Logger.log('╔════════════════════════════════════════╗');
+function setupAllSheets(communityName) {
+  // If no community specified, show selection dialog
+  if (!communityName) {
+    var ui = SpreadsheetApp.getUi();
+    var communities = Object.keys(COMMUNITY_SHEETS);
+    var communityList = communities.join('\\n');
+    
+    var response = ui.prompt(
+      'Select Community',
+      'Enter the community name to set up:\\n\\n' + communityList + '\\n\\nCommunity:',
+      ui.ButtonSet.OK_CANCEL
+    );
+    
+    if (response.getSelectedButton() === ui.Button.OK) {
+      communityName = response.getResponseText().trim();
+    } else {
+      Logger.log('Setup cancelled by user');
+      return { success: false, message: 'Setup cancelled' };
+    }
+  }
+  
+  // Validate community
+  if (!COMMUNITY_SHEETS[communityName]) {
+    Logger.log('Invalid community: ' + communityName);
+    Browser.msgBox(
+      'Invalid Community',
+      'Community "' + communityName + '" not found. Valid communities: ' + Object.keys(COMMUNITY_SHEETS).join(', '),
+      Browser.Buttons.OK
+    );
+    return { success: false, message: 'Invalid community' };
+  }
+  
+  var sheetId = COMMUNITY_SHEETS[communityName];
+  
+  Logger.log('╔═══════════════════════════════════════╗');
   Logger.log('║  SUNDAY SERVICE REGISTRATION SETUP     ║');
-  Logger.log('╚════════════════════════════════════════╝');
+  Logger.log('║  Community: ' + communityName.padEnd(25) + '║');
+  Logger.log('╚═══════════════════════════════════════╝');
   
   try {
-    var spreadsheet = SpreadsheetApp.openById(SHEET_ID);
+    var spreadsheet = SpreadsheetApp.openById(sheetId);
     Logger.log('✓ Connected to spreadsheet: ' + spreadsheet.getName());
     Logger.log('');
     
@@ -278,7 +374,7 @@ function setupAllSheets() {
       Logger.log('⚠ Registrations tab already exists');
       var response = Browser.msgBox(
         'Registrations Tab Exists',
-        'The Registrations tab already exists. Do you want to recreate it? This will DELETE all existing data!',
+        'The Registrations tab already exists for ' + communityName + '. Do you want to recreate it? This will DELETE all existing data!',
         Browser.Buttons.YES_NO
       );
       
@@ -287,14 +383,14 @@ function setupAllSheets() {
         Logger.log('✓ Old Registrations tab deleted');
         mainSheet = spreadsheet.insertSheet(SHEET_NAME);
         formatMainSheet(mainSheet);
-        Logger.log('✓ New Registrations tab created with EMAIL column');
+        Logger.log('✓ New Registrations tab created');
       } else {
         Logger.log('ℹ Keeping existing Registrations tab');
       }
     } else {
       mainSheet = spreadsheet.insertSheet(SHEET_NAME);
       formatMainSheet(mainSheet);
-      Logger.log('✓ Registrations tab created with EMAIL column');
+      Logger.log('✓ Registrations tab created');
     }
     
     Logger.log('');
@@ -311,7 +407,7 @@ function setupAllSheets() {
     
     monthlySheet = spreadsheet.insertSheet(MONTHLY_SHEET_NAME);
     Logger.log('✓ Current Month tab created');
-    updateMonthlySummary();
+    updateMonthlySummary(sheetId);
     Logger.log('✓ Current Month tab populated');
     
     Logger.log('');
@@ -328,55 +424,71 @@ function setupAllSheets() {
     
     yearlySheet = spreadsheet.insertSheet(YEARLY_SHEET_NAME);
     Logger.log('✓ Yearly Summary tab created');
-    updateYearlySummary();
+    updateYearlySummary(sheetId);
     Logger.log('✓ Yearly Summary tab populated');
     
     Logger.log('');
-    Logger.log('╔════════════════════════════════════════╗');
-    Logger.log('║           SETUP COMPLETE! ✓            ║');
-    Logger.log('╚════════════════════════════════════════╝');
+    
+    // STEP 4: Setup Sunday Breakdown tab
+    Logger.log('STEP 4: Setting up Sunday Breakdown tab...');
+    Logger.log('----------------------------------------');
+    
+    var sundaySheet = spreadsheet.getSheetByName(SUNDAY_SHEET_NAME);
+    if (sundaySheet) {
+      spreadsheet.deleteSheet(sundaySheet);
+      Logger.log('✓ Old Sunday Breakdown tab deleted');
+    }
+    
+    sundaySheet = spreadsheet.insertSheet(SUNDAY_SHEET_NAME);
+    Logger.log('✓ Sunday Breakdown tab created');
+    updateSundayBreakdown(sheetId);
+    Logger.log('✓ Sunday Breakdown tab populated');
+    
     Logger.log('');
-    Logger.log('Your Google Sheet is ready at:');
+    Logger.log('╔═══════════════════════════════════════╗');
+    Logger.log('║           SETUP COMPLETE! ✓            ║');
+    Logger.log('║  Community: ' + communityName.padEnd(25) + '║');
+    Logger.log('╚═══════════════════════════════════════╝');
+    Logger.log('');
+    Logger.log('Sheet is ready at:');
     Logger.log(spreadsheet.getUrl());
     Logger.log('');
-    Logger.log('All 3 tabs created:');
-    Logger.log('  1. Registrations (with Email in column D)');
+    Logger.log('All 4 tabs created:');
+    Logger.log('  1. Registrations (main data)');
     Logger.log('  2. Current Month (auto-updating)');
     Logger.log('  3. Yearly Summary (auto-updating)');
+    Logger.log('  4. Sunday Breakdown (auto-updating)');
     Logger.log('');
-    Logger.log('Next steps:');
-    Logger.log('  1. Deploy your web app');
-    Logger.log('  2. Test with testRegistration() function');
-    Logger.log('  3. Embed form on your website');
     
     Browser.msgBox(
       'Setup Complete!',
-      'All tabs have been created successfully.\\n\\n' +
-      '✓ Registrations tab (with Email column)\\n' +
+      'All tabs created successfully for ' + communityName + '\\n\\n' +
+      '✓ Registrations tab\\n' +
       '✓ Current Month dashboard\\n' +
-      '✓ Yearly Summary dashboard\\n\\n' +
-      'Check the Execution log for details.',
+      '✓ Yearly Summary dashboard\\n' +
+      '✓ Sunday Breakdown dashboard\\n\\n' +
+      'Sheet URL: ' + spreadsheet.getUrl(),
       Browser.Buttons.OK
     );
     
     return {
       success: true,
-      message: 'Setup completed successfully',
+      message: 'Setup completed successfully for ' + communityName,
       url: spreadsheet.getUrl()
     };
     
   } catch (error) {
     Logger.log('');
-    Logger.log('╔════════════════════════════════════════╗');
+    Logger.log('╔═══════════════════════════════════════╗');
     Logger.log('║         SETUP FAILED! ✗                ║');
-    Logger.log('╚════════════════════════════════════════╝');
+    Logger.log('╚═══════════════════════════════════════╝');
     Logger.log('');
     Logger.log('Error: ' + error.toString());
     Logger.log('Stack: ' + error.stack);
     
     Browser.msgBox(
       'Setup Failed',
-      'There was an error during setup: ' + error.toString(),
+      'There was an error during setup for ' + communityName + ': ' + error.toString(),
       Browser.Buttons.OK
     );
     
@@ -388,24 +500,23 @@ function setupAllSheets() {
 }
 
 /**
- * Formats the main Registrations sheet with PROPER EMAIL COLUMN
+ * Formats the main Registrations sheet
  */
 function formatMainSheet(sheet) {
-  Logger.log('  → Adding headers with Email column...');
+  Logger.log('  → Adding headers...');
   
-  // CRITICAL: These columns must match the saveRegistration function
   var headers = [
     'Timestamp',      // Column A
-    'First Name',     // Column B
-    'Last Name',      // Column C
-    'Email',          // Column D ← EMAIL COLUMN
-    'Type',           // Column E
-    'Session',        // Column F
-    'Sunday Date'     // Column G
+    'Community',      // Column B
+    'First Name',     // Column C
+    'Last Name',      // Column D
+    'Email',          // Column E
+    'Type',           // Column F
+    'Session',        // Column G
+    'Sunday Date'     // Column H
   ];
   
   sheet.appendRow(headers);
-  Logger.log('  → Headers added: ' + headers.join(', '));
   
   // Format header row
   var headerRange = sheet.getRange(1, 1, 1, headers.length);
@@ -421,14 +532,13 @@ function formatMainSheet(sheet) {
   
   // Set column widths
   sheet.setColumnWidth(1, 180);  // Timestamp
-  sheet.setColumnWidth(2, 120);  // First Name
-  sheet.setColumnWidth(3, 120);  // Last Name
-  sheet.setColumnWidth(4, 250);  // Email ← WIDER FOR EMAILS
-  sheet.setColumnWidth(5, 100);  // Type
-  sheet.setColumnWidth(6, 180);  // Session
-  sheet.setColumnWidth(7, 180);  // Sunday Date
-  
-  Logger.log('  → Column widths set (Email column is 250px)');
+  sheet.setColumnWidth(2, 130);  // Community
+  sheet.setColumnWidth(3, 120);  // First Name
+  sheet.setColumnWidth(4, 120);  // Last Name
+  sheet.setColumnWidth(5, 250);  // Email
+  sheet.setColumnWidth(6, 100);  // Type
+  sheet.setColumnWidth(7, 180);  // Session
+  sheet.setColumnWidth(8, 180);  // Sunday Date
   
   // Add border to headers
   headerRange.setBorder(
@@ -437,26 +547,22 @@ function formatMainSheet(sheet) {
     SpreadsheetApp.BorderStyle.SOLID_MEDIUM
   );
   
-  // Data validation for Type column (column E)
+  // Data validation for Type column
   var typeRule = SpreadsheetApp.newDataValidation()
     .requireValueInList(['Member', 'Guest'])
     .setAllowInvalid(false)
     .build();
-  sheet.getRange(2, 5, 1000, 1).setDataValidation(typeRule);
-  
-  Logger.log('  → Data validation added for Type column');
+  sheet.getRange(2, 6, 1000, 1).setDataValidation(typeRule);
   
   // Apply row banding
-  var dataRange = sheet.getRange(2, 1, 1000, 7);
+  var dataRange = sheet.getRange(2, 1, 1000, 8);
   var banding = dataRange.applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY);
   banding.setHeaderRowColor('#667eea')
          .setFirstRowColor('#f3f4ff')
          .setSecondRowColor('#ffffff');
   
-  Logger.log('  → Alternating row colors applied');
-  
   // Center align Type column
-  sheet.getRange(2, 5, 1000, 1).setHorizontalAlignment('center');
+  sheet.getRange(2, 6, 1000, 1).setHorizontalAlignment('center');
   
   // Format timestamp column
   sheet.getRange(2, 1, 1000, 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
@@ -471,7 +577,7 @@ function formatMainSheet(sheet) {
  * Adds summary section to main sheet
  */
 function addMainSummarySection(sheet) {
-  var summaryStartCol = 9; // Column I
+  var summaryStartCol = 10; // Column J (moved because of Community column)
   
   sheet.getRange(1, summaryStartCol).setValue('REGISTRATION SUMMARY');
   sheet.getRange(1, summaryStartCol, 1, 2).merge()
@@ -483,13 +589,15 @@ function addMainSummarySection(sheet) {
   
   sheet.setRowHeight(1, 40);
   
-  // Summary formulas - Column D is Email
+  // Summary formulas - adjusted for Community column (Email is now column E)
   var summaryData = [
-    ['Total Registrations', '=COUNTA(B2:B)'],
-    ['Total Members', '=COUNTIF(E2:E,"Member")'],
-    ['Total Guests', '=COUNTIF(E2:E,"Guest")'],
-    ['Unique Emails', '=COUNTA(UNIQUE(FILTER(D2:D,D2:D<>"")))'],
-    ['Last Registration', '=IF(COUNTA(A2:A)>0,TEXT(MAX(A2:A),"yyyy-mm-dd hh:mm"),"No data")']
+    ['Total Registrations', '=COUNTA(C2:C)'],
+    ['Total Members', '=COUNTIF(F2:F,"Member")'],
+    ['Total Guests', '=COUNTIF(F2:F,"Guest")'],
+    ['Unique Emails', '=COUNTA(UNIQUE(FILTER(E2:E,E2:E<>"")))'],
+    ['Last Registration', '=IF(COUNTA(A2:A)>0,TEXT(MAX(A2:A),"yyyy-mm-dd hh:mm"),"No data")'],
+    ['', ''],
+    ['🔄 Refresh Dashboard', 'Click to update all tabs']
   ];
   
   for (var i = 0; i < summaryData.length; i++) {
@@ -497,28 +605,36 @@ function addMainSummarySection(sheet) {
     sheet.getRange(rowNum, summaryStartCol).setValue(summaryData[i][0])
          .setFontWeight('bold')
          .setBackground('#f3f4ff');
-    sheet.getRange(rowNum, summaryStartCol + 1).setFormula(summaryData[i][1])
-         .setHorizontalAlignment('center')
-         .setBackground('#ffffff');
+    
+    if (i < summaryData.length - 1) {
+      sheet.getRange(rowNum, summaryStartCol + 1).setFormula(summaryData[i][1])
+           .setHorizontalAlignment('center')
+           .setBackground('#ffffff');
+    } else {
+      // Add button-like styling for refresh
+      sheet.getRange(rowNum, summaryStartCol, 1, 2).merge()
+           .setBackground('#28a745')
+           .setFontColor('#ffffff')
+           .setHorizontalAlignment('center')
+           .setFontWeight('bold');
+    }
   }
   
   sheet.setColumnWidth(summaryStartCol, 180);
   sheet.setColumnWidth(summaryStartCol + 1, 150);
   
-  sheet.getRange(1, summaryStartCol, 7, 2).setBorder(
+  sheet.getRange(1, summaryStartCol, summaryData.length + 2, 2).setBorder(
     true, true, true, true, true, true,
     '#cccccc',
     SpreadsheetApp.BorderStyle.SOLID
   );
-  
-  Logger.log('  → Summary section added');
 }
 
 /**
- * Gets or creates the main sheet
+ * Gets or creates the main sheet for a given sheet ID
  */
-function getOrCreateSheet() {
-  var spreadsheet = SpreadsheetApp.openById(SHEET_ID);
+function getOrCreateSheet(sheetId) {
+  var spreadsheet = SpreadsheetApp.openById(sheetId);
   var sheet = spreadsheet.getSheetByName(SHEET_NAME);
   
   if (!sheet) {
@@ -527,21 +643,13 @@ function getOrCreateSheet() {
     formatMainSheet(sheet);
   }
   
-  // Verify email column exists
-  var headers = sheet.getRange(1, 1, 1, 7).getValues()[0];
-  if (headers[3] !== 'Email') {
-    Logger.log('WARNING: Email column not found in position D!');
-    Logger.log('Current headers: ' + headers.join(', '));
-    Logger.log('Please run setupAllSheets() to fix the sheet structure');
-  }
-  
   return sheet;
 }
 
 // ==================== AUTO-UPDATE FUNCTIONS ====================
 
 /**
- * Updates Current Month tab - CALLED AUTOMATICALLY AFTER EACH REGISTRATION
+ * Updates Current Month tab
  */
 function updateMonthlySummary() {
   try {
@@ -570,7 +678,7 @@ function updateMonthlySummary() {
     
     monthlySheet.setRowHeight(1, 50);
     
-    // Headers WITH EMAIL
+    // Headers
     var headers = ['Timestamp', 'First Name', 'Last Name', 'Email', 'Type', 'Session', 'Sunday Date'];
     monthlySheet.getRange(2, 1, 1, headers.length).setValues([headers])
                 .setFontWeight('bold')
@@ -605,7 +713,7 @@ function updateMonthlySummary() {
     monthlySheet.setColumnWidth(1, 180);
     monthlySheet.setColumnWidth(2, 120);
     monthlySheet.setColumnWidth(3, 120);
-    monthlySheet.setColumnWidth(4, 250); // Email
+    monthlySheet.setColumnWidth(4, 250);
     monthlySheet.setColumnWidth(5, 100);
     monthlySheet.setColumnWidth(6, 180);
     monthlySheet.setColumnWidth(7, 180);
@@ -642,7 +750,7 @@ function updateMonthlySummary() {
 }
 
 /**
- * Updates Yearly Summary tab - CALLED AUTOMATICALLY AFTER EACH REGISTRATION
+ * Updates Yearly Summary tab
  */
 function updateYearlySummary() {
   try {
@@ -757,6 +865,266 @@ function updateYearlySummary() {
   }
 }
 
+/**
+ * NEW: Updates Sunday Breakdown tab - Shows registrations grouped by Sunday dates
+ */
+function updateSundayBreakdown() {
+  try {
+    var spreadsheet = SpreadsheetApp.openById(SHEET_ID);
+    var mainSheet = spreadsheet.getSheetByName(SHEET_NAME);
+    var sundaySheet = spreadsheet.getSheetByName(SUNDAY_SHEET_NAME);
+    
+    if (!sundaySheet) {
+      sundaySheet = spreadsheet.insertSheet(SUNDAY_SHEET_NAME);
+    } else {
+      sundaySheet.clear();
+    }
+    
+    // Title
+    sundaySheet.getRange(1, 1, 1, 6).merge()
+               .setValue('📊 SUNDAY SERVICE REGISTRATION BREAKDOWN')
+               .setFontWeight('bold')
+               .setFontSize(14)
+               .setBackground('#667eea')
+               .setFontColor('#ffffff')
+               .setHorizontalAlignment('center');
+    
+    sundaySheet.setRowHeight(1, 50);
+    
+    // Last updated timestamp
+    sundaySheet.getRange(2, 1, 1, 6).merge()
+               .setValue('Last Updated: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss'))
+               .setFontSize(10)
+               .setFontColor('#666666')
+               .setHorizontalAlignment('center');
+    
+    // Headers
+    var headers = ['Sunday Date', 'Total Registrations', 'Members', 'Guests', 'Unique Emails', 'Details'];
+    sundaySheet.getRange(4, 1, 1, headers.length).setValues([headers])
+               .setFontWeight('bold')
+               .setBackground('#764ba2')
+               .setFontColor('#ffffff')
+               .setHorizontalAlignment('center');
+    
+    sundaySheet.setRowHeight(4, 40);
+    sundaySheet.setFrozenRows(4);
+    
+    // Get all data
+    var mainData = mainSheet.getDataRange().getValues();
+    
+    // Group by Sunday date
+    var sundayGroups = {};
+    
+    for (var i = 1; i < mainData.length; i++) {
+      var sundayDate = mainData[i][6]; // Column G: Sunday Date
+      
+      if (sundayDate) {
+        if (!sundayGroups[sundayDate]) {
+          sundayGroups[sundayDate] = [];
+        }
+        sundayGroups[sundayDate].push(mainData[i]);
+      }
+    }
+    
+    // Convert to sorted array
+    var sundayDates = Object.keys(sundayGroups).sort().reverse(); // Most recent first
+    
+    var sundayData = [];
+    for (var i = 0; i < sundayDates.length; i++) {
+      var date = sundayDates[i];
+      var dateData = sundayGroups[date];
+      
+      sundayData.push([
+        date,
+        dateData.length,
+        countByType(dateData, 'Member'),
+        countByType(dateData, 'Guest'),
+        getUniqueEmails(dateData).length,
+        'View Details →'
+      ]);
+    }
+    
+    // Add data
+    if (sundayData.length > 0) {
+      sundaySheet.getRange(5, 1, sundayData.length, 6).setValues(sundayData);
+      
+      // Format data rows
+      for (var i = 0; i < sundayData.length; i++) {
+        var rowNum = 5 + i;
+        var bgColor = i % 2 === 0 ? '#f3f4ff' : '#ffffff';
+        
+        sundaySheet.getRange(rowNum, 1, 1, 6).setBackground(bgColor);
+        
+        // Make Sunday date bold
+        sundaySheet.getRange(rowNum, 1).setFontWeight('bold');
+        
+        // Center align numbers
+        sundaySheet.getRange(rowNum, 2, 1, 4).setHorizontalAlignment('center');
+        
+        // Style details link
+        sundaySheet.getRange(rowNum, 6)
+                   .setFontColor('#667eea')
+                   .setFontWeight('bold')
+                   .setHorizontalAlignment('center');
+      }
+    } else {
+      sundaySheet.getRange(5, 1, 1, 6).merge()
+                 .setValue('No registrations yet')
+                 .setHorizontalAlignment('center')
+                 .setFontStyle('italic')
+                 .setFontColor('#999999');
+    }
+    
+    // Set column widths
+    sundaySheet.setColumnWidth(1, 200); // Sunday Date
+    sundaySheet.setColumnWidth(2, 150); // Total
+    sundaySheet.setColumnWidth(3, 120); // Members
+    sundaySheet.setColumnWidth(4, 120); // Guests
+    sundaySheet.setColumnWidth(5, 150); // Emails
+    sundaySheet.setColumnWidth(6, 150); // Details
+    
+    // Add summary section
+    var summaryRow = 5 + sundayData.length + 2;
+    
+    sundaySheet.getRange(summaryRow, 1, 1, 3).merge()
+               .setValue('📈 OVERALL STATISTICS')
+               .setFontWeight('bold')
+               .setFontSize(12)
+               .setBackground('#764ba2')
+               .setFontColor('#ffffff')
+               .setHorizontalAlignment('center');
+    
+    var totalRegistrations = 0;
+    var totalMembers = 0;
+    var totalGuests = 0;
+    
+    for (var i = 0; i < sundayData.length; i++) {
+      totalRegistrations += sundayData[i][1];
+      totalMembers += sundayData[i][2];
+      totalGuests += sundayData[i][3];
+    }
+    
+    var overallStats = [
+      ['Total Sundays', sundayDates.length, ''],
+      ['Total Registrations', totalRegistrations, ''],
+      ['Total Members', totalMembers, ''],
+      ['Total Guests', totalGuests, ''],
+      ['Average per Sunday', sundayDates.length > 0 ? Math.round(totalRegistrations / sundayDates.length) : 0, 'people']
+    ];
+    
+    for (var i = 0; i < overallStats.length; i++) {
+      sundaySheet.getRange(summaryRow + i + 1, 1).setValue(overallStats[i][0])
+                 .setFontWeight('bold')
+                 .setBackground('#f3f4ff');
+      sundaySheet.getRange(summaryRow + i + 1, 2).setValue(overallStats[i][1])
+                 .setHorizontalAlignment('center')
+                 .setBackground('#ffffff')
+                 .setFontWeight('bold')
+                 .setFontSize(14);
+      sundaySheet.getRange(summaryRow + i + 1, 3).setValue(overallStats[i][2])
+                 .setFontSize(10)
+                 .setFontColor('#666666')
+                 .setBackground('#ffffff');
+    }
+    
+    sundaySheet.getRange(summaryRow, 1, overallStats.length + 1, 3).setBorder(
+      true, true, true, true, true, true,
+      '#cccccc',
+      SpreadsheetApp.BorderStyle.SOLID
+    );
+    
+  } catch (error) {
+    Logger.log('Error updating Sunday breakdown: ' + error.toString());
+  }
+}
+
+// ==================== AUTOMATED TRIGGERS ====================
+
+/**
+ * Sets up automated triggers for dashboard updates
+ * Run this function ONCE after setupAllSheets()
+ */
+function setupAutomatedTriggers() {
+  try {
+    // Delete existing triggers first
+    deleteExistingTriggers();
+    
+    // Create time-based trigger - runs every 5 hours
+    ScriptApp.newTrigger('updateAllSummaries')
+        .timeBased()
+        .everyHours(5)
+        .create();
+    
+    Logger.log('✓ Automated trigger created: Updates every 5 hours');
+    
+    Browser.msgBox(
+      'Triggers Setup Complete!',
+      'Automated updates configured:\\n\\n' +
+      '✓ Dashboard updates every 5 hours\\n\\n' +
+      'You can also manually update by running updateAllSummaries()\\n\\n' +
+      'To view or delete triggers, go to:\\n' +
+      'Extensions > Apps Script > Triggers',
+      Browser.Buttons.OK
+    );
+    
+    return { success: true };
+    
+  } catch (error) {
+    Logger.log('Error setting up triggers: ' + error.toString());
+    Browser.msgBox(
+      'Trigger Setup Failed',
+      'Error: ' + error.toString(),
+      Browser.Buttons.OK
+    );
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * Deletes all existing triggers for this project
+ */
+function deleteExistingTriggers() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    ScriptApp.deleteTrigger(triggers[i]);
+  }
+  Logger.log('✓ Deleted ' + triggers.length + ' existing trigger(s)');
+}
+
+/**
+ * View all current triggers
+ */
+function viewTriggers() {
+  var triggers = ScriptApp.getProjectTriggers();
+  
+  Logger.log('╔═══════════════════════════════════════╗');
+  Logger.log('║        CURRENT TRIGGERS                ║');
+  Logger.log('╚═══════════════════════════════════════╝');
+  
+  if (triggers.length === 0) {
+    Logger.log('No triggers found.');
+    Logger.log('Run setupAutomatedTriggers() to create them.');
+  } else {
+    for (var i = 0; i < triggers.length; i++) {
+      var trigger = triggers[i];
+      Logger.log('Trigger ' + (i + 1) + ':');
+      Logger.log('  Function: ' + trigger.getHandlerFunction());
+      Logger.log('  Trigger Source: ' + trigger.getTriggerSource());
+      Logger.log('  Event Type: ' + trigger.getEventType());
+      Logger.log('');
+    }
+  }
+  
+  Browser.msgBox(
+    'Current Triggers',
+    'Found ' + triggers.length + ' trigger(s).\\n\\n' +
+    'Check the Execution log for details.\\n\\n' +
+    'To manage triggers, go to:\\n' +
+    'Extensions > Apps Script > Triggers',
+    Browser.Buttons.OK
+  );
+}
+
 // ==================== HELPER FUNCTIONS ====================
 
 function getMonthName(monthIndex) {
@@ -786,10 +1154,78 @@ function getUniqueEmails(data) {
   return emails;
 }
 
-// ==================== TEST & MAINTENANCE ====================
+// ==================== MANUAL UPDATE & MAINTENANCE ====================
 
 /**
- * Test function - sends test data and email
+ * Manual refresh of all dashboard tabs
+ * Can be run anytime to update all dashboards
+ */
+function updateAllSummaries() {
+  Logger.log('╔═══════════════════════════════════════╗');
+  Logger.log('║    UPDATING ALL DASHBOARD TABS         ║');
+  Logger.log('╚═══════════════════════════════════════╝');
+  
+  try {
+    Logger.log('Updating Current Month...');
+    updateMonthlySummary();
+    Logger.log('✓ Current Month updated');
+    
+    Logger.log('Updating Yearly Summary...');
+    updateYearlySummary();
+    Logger.log('✓ Yearly Summary updated');
+    
+    Logger.log('Updating Sunday Breakdown...');
+    updateSundayBreakdown();
+    Logger.log('✓ Sunday Breakdown updated');
+    
+    Logger.log('');
+    Logger.log('✓ All dashboards updated successfully!');
+    Logger.log('Updated at: ' + new Date().toLocaleString());
+    
+    // Show confirmation in UI if called manually
+    var ui = SpreadsheetApp.getUi();
+    ui.alert(
+      '✓ Dashboard Update Complete',
+      'All dashboard tabs have been refreshed:\\n\\n' +
+      '• Current Month\\n' +
+      '• Yearly Summary\\n' +
+      '• Sunday Breakdown\\n\\n' +
+      'Updated at: ' + new Date().toLocaleString(),
+      ui.ButtonSet.OK
+    );
+    
+  } catch (error) {
+    Logger.log('✗ Error updating dashboards: ' + error.toString());
+    
+    var ui = SpreadsheetApp.getUi();
+    ui.alert(
+      'Update Failed',
+      'Error: ' + error.toString(),
+      ui.ButtonSet.OK
+    );
+  }
+}
+
+/**
+ * Creates a custom menu in Google Sheets for easy access
+ */
+function onOpen() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('📊 Sunday Service')
+      .addItem('🔄 Refresh All Dashboards', 'updateAllSummaries')
+      .addSeparator()
+      .addItem('⚙️ Setup All Sheets', 'setupAllSheets')
+      .addItem('⏰ Setup Auto-Updates (5 hours)', 'setupAutomatedTriggers')
+      .addSeparator()
+      .addItem('👁️ View Configuration', 'viewConfiguration')
+      .addItem('🔔 View Triggers', 'viewTriggers')
+      .addSeparator()
+      .addItem('🧪 Test Registration', 'testRegistration')
+      .addToUi();
+}
+
+/**
+ * Test function
  */
 function testRegistration() {
   Logger.log('Running test registration...');
@@ -799,7 +1235,7 @@ function testRegistration() {
       {
         firstName: 'Test',
         lastName: 'User',
-        email: Session.getActiveUser().getEmail(), // Your email
+        email: Session.getActiveUser().getEmail(),
         type: 'Member'
       }
     ],
@@ -828,53 +1264,35 @@ function testRegistration() {
 }
 
 /**
- * Manual refresh of all tabs
- */
-function updateAllSummaries() {
-  Logger.log('Manually updating all summaries...');
-  updateMonthlySummary();
-  updateYearlySummary();
-  Logger.log('All summaries updated!');
-  
-  Browser.msgBox(
-    'Update Complete',
-    'All dashboard tabs have been refreshed.',
-    Browser.Buttons.OK
-  );
-}
-
-/**
  * View configuration
  */
 function viewConfiguration() {
   var spreadsheet = SpreadsheetApp.openById(SHEET_ID);
   
-  Logger.log('╔════════════════════════════════════════╗');
+  Logger.log('╔═══════════════════════════════════════╗');
   Logger.log('║        CURRENT CONFIGURATION           ║');
-  Logger.log('╚════════════════════════════════════════╝');
+  Logger.log('╚═══════════════════════════════════════╝');
   Logger.log('Sheet ID: ' + SHEET_ID);
   Logger.log('Sheet URL: ' + spreadsheet.getUrl());
   Logger.log('Main Tab: ' + SHEET_NAME);
   Logger.log('Monthly Tab: ' + MONTHLY_SHEET_NAME);
   Logger.log('Yearly Tab: ' + YEARLY_SHEET_NAME);
+  Logger.log('Sunday Tab: ' + SUNDAY_SHEET_NAME);
   Logger.log('Live Stream: ' + LIVE_STREAM_LINK);
+  Logger.log('Service End Hour: ' + SERVICE_END_HOUR + ':00');
   Logger.log('');
   
-  var mainSheet = spreadsheet.getSheetByName(SHEET_NAME);
-  if (mainSheet) {
-    var headers = mainSheet.getRange(1, 1, 1, 7).getValues()[0];
-    Logger.log('Column Headers:');
-    for (var i = 0; i < headers.length; i++) {
-      Logger.log('  Column ' + String.fromCharCode(65 + i) + ': ' + headers[i]);
-    }
-    Logger.log('');
-    Logger.log('✓ Email column: ' + (headers[3] === 'Email' ? 'Correctly positioned in column D' : 'MISSING OR WRONG POSITION!'));
-  }
+  var sundayInfo = getNextSunday();
+  Logger.log('Current Sunday Logic:');
+  Logger.log('  Next/Current Sunday: ' + sundayInfo.formatted);
+  Logger.log('  Is Today: ' + sundayInfo.isToday);
+  Logger.log('  Date Only: ' + sundayInfo.dateOnly);
   
   Browser.msgBox(
     'Configuration',
     'Configuration details logged to Execution log.\\n\\n' +
-    'Sheet URL: ' + spreadsheet.getUrl(),
+    'Sheet URL: ' + spreadsheet.getUrl() + '\\n\\n' +
+    'Next Sunday: ' + sundayInfo.formatted,
     Browser.Buttons.OK
   );
 }
