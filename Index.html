@@ -65,12 +65,29 @@
       margin-bottom: 25px;
       font-weight: 600;
       font-size: 16px;
+      min-height: 60px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
     }
 
     .sunday-date .date-label {
       font-size: 12px;
       opacity: 0.9;
       margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    #sundayDateDisplay {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .sunday-date.loading #sundayDateDisplay {
+      opacity: 0.7;
+      font-size: 14px;
     }
 
     .person-block {
@@ -128,7 +145,8 @@
     }
 
     input[type="text"],
-    input[type="email"] {
+    input[type="email"],
+    select {
       width: 100%;
       padding: 12px;
       border: 2px solid #e9ecef;
@@ -138,9 +156,29 @@
     }
 
     input[type="text"]:focus,
-    input[type="email"]:focus {
+    input[type="email"]:focus,
+    select:focus {
       outline: none;
       border-color: #667eea;
+    }
+
+    select {
+      cursor: pointer;
+      background-color: white;
+    }
+
+    .community-selection {
+      background: linear-gradient(135deg, #f3f4ff 0%, #ffffff 100%);
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 25px;
+      border: 2px solid #667eea;
+    }
+
+    .community-selection label {
+      color: #667eea;
+      font-weight: 600;
+      font-size: 16px;
     }
 
     .checkbox-group {
@@ -331,6 +369,16 @@
       }
     }
 
+    /* Pulse animation for loading state */
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    .loading {
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
     /* Modal Styles */
     .modal-overlay {
       display: none;
@@ -436,9 +484,17 @@
       <h1>🙏 Sunday Service Registration</h1>
       <p class="subtitle">Please register everyone who will be joining the live stream</p>
       
-      <div class="sunday-date">
-        <div class="date-label">NEXT SUNDAY SERVICE</div>
-        <div id="sundayDateDisplay">Loading...</div>
+      <div class="sunday-date" id="sundayDateBox">
+        <div class="date-label">Registering For</div>
+        <div id="sundayDateDisplay">Getting date...</div>
+      </div>
+
+      <!-- COMMUNITY SELECTION -->
+      <div class="form-group community-selection">
+        <label for="communitySelect">Select Your Community *</label>
+        <select id="communitySelect" required>
+          <option value="">-- Choose a Community --</option>
+        </select>
       </div>
       
       <div class="error-message" id="errorMessage"></div>
@@ -515,17 +571,89 @@
   <script>
     var personCount = 1;
     var sundayDate = '';
+    var sundayDateFormatted = '';
+    var communities = [];
 
-    // Load Sunday date when page loads
+    /**
+     * Load Sunday date and communities when page loads
+     */
     window.onload = function() {
+      console.log('Page loaded, initializing...');
+      
+      // Load communities first
+      google.script.run
+        .withSuccessHandler(function(communityList) {
+          console.log('Communities loaded:', communityList);
+          communities = communityList;
+          
+          var select = document.getElementById('communitySelect');
+          communityList.forEach(function(community) {
+            var option = document.createElement('option');
+            option.value = community;
+            option.textContent = community;
+            select.appendChild(option);
+          });
+          
+          console.log('Community dropdown populated');
+        })
+        .withFailureHandler(function(error) {
+          console.error('Error loading communities:', error);
+          // Fallback to default communities
+          var select = document.getElementById('communitySelect');
+          ['Belvedere', 'New Jersey'].forEach(function(community) {
+            var option = document.createElement('option');
+            option.value = community;
+            option.textContent = community;
+            select.appendChild(option);
+          });
+        })
+        .getCommunities();
+      
+      // Load Sunday date
+      var dateBox = document.getElementById('sundayDateBox');
+      var dateDisplay = document.getElementById('sundayDateDisplay');
+      dateBox.classList.add('loading');
+      
       google.script.run
         .withSuccessHandler(function(result) {
-          sundayDate = result.formatted;
-          document.getElementById('sundayDateDisplay').textContent = result.formatted;
+          console.log('Sunday date received:', result);
+          
+          dateBox.classList.remove('loading');
+          sundayDate = result.dateOnly;
+          sundayDateFormatted = result.formatted;
+          dateDisplay.textContent = result.formatted;
+          
+          var label = dateBox.querySelector('.date-label');
+          if (result.isToday) {
+            label.textContent = '🎯 TODAY\'S SERVICE';
+          } else {
+            label.textContent = '📅 UPCOMING SERVICE';
+          }
+          
+          console.log('Date display updated successfully');
         })
         .withFailureHandler(function(error) {
           console.error('Error loading Sunday date:', error);
-          document.getElementById('sundayDateDisplay').textContent = 'This Sunday';
+          dateBox.classList.remove('loading');
+          dateDisplay.textContent = 'This Sunday';
+          
+          var today = new Date();
+          var dayOfWeek = today.getDay();
+          var daysUntilSunday = (7 - dayOfWeek) % 7;
+          if (daysUntilSunday === 0 && dayOfWeek !== 0) daysUntilSunday = 7;
+          
+          var targetDate = new Date(today);
+          targetDate.setDate(today.getDate() + daysUntilSunday);
+          
+          sundayDate = targetDate.toISOString().split('T')[0];
+          sundayDateFormatted = targetDate.toLocaleDateString('en-US', { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          });
+          
+          console.log('Using fallback date:', sundayDateFormatted);
         })
         .getNextSunday();
     };
@@ -615,6 +743,17 @@
       var errorMessage = document.getElementById('errorMessage');
       errorMessage.classList.remove('show');
       
+      // Validate community selection
+      var community = document.getElementById('communitySelect').value;
+      if (!community) {
+        errorMessage.textContent = 'Please select your community';
+        errorMessage.classList.add('show');
+        document.getElementById('communitySelect').focus();
+        return;
+      }
+      
+      console.log('Community selected:', community);
+      
       // Collect all registrants
       var registrants = [];
       var personBlocks = document.querySelectorAll('.person-block');
@@ -675,9 +814,10 @@
       
       // Send data to Google Apps Script
       var formData = {
+        community: community,
         registrants: registrants,
-        sessionInfo: 'Sunday Service - ' + new Date().toLocaleDateString(),
-        sundayDate: sundayDate
+        sessionInfo: 'Sunday Service - ' + sundayDateFormatted,
+        sundayDate: sundayDateFormatted
       };
       
       console.log('Sending data to Google Apps Script:', formData);
@@ -747,6 +887,9 @@
       // Show form
       document.getElementById('registrationForm').style.display = 'block';
       
+      // Reset community selection
+      document.getElementById('communitySelect').value = '';
+      
       // Clear all person blocks except the first
       var container = document.getElementById('peopleContainer');
       var personBlocks = container.querySelectorAll('.person-block');
@@ -765,10 +908,14 @@
       
       // Clear error message
       document.getElementById('errorMessage').classList.remove('show');
+      
+      // Scroll to top
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     // Log that script is loaded
     console.log('Sunday Service Registration form loaded successfully');
+    console.log('Version: Enhanced with smart Sunday detection');
   </script>
 </body>
 </html>
